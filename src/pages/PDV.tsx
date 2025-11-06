@@ -352,82 +352,7 @@ export default function PDV() {
         <p className="text-muted-foreground">Crie pedidos e finalize fechamentos</p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="mb-6">
-        <TabsList>
-          <TabsTrigger value="new" className="gap-2">
-            <ShoppingCart className="h-4 w-4" />
-            Novo Pedido
-          </TabsTrigger>
-          <TabsTrigger value="pending" className="gap-2">
-            <Clock className="h-4 w-4" />
-            Pedidos Pendentes ({pendingOrders.length})
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="pending" className="mt-6">
-          <div className="grid gap-4">
-            {pendingOrders.length === 0 ? (
-              <Card className="p-8 text-center">
-                <Clock className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground">Nenhum pedido pendente</p>
-              </Card>
-            ) : (
-              pendingOrders.map((order) => (
-                <Card key={order.id} className="p-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h3 className="font-bold text-lg">Pedido {order.order_number}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {new Date(order.created_at).toLocaleString('pt-BR')}
-                      </p>
-                      {order.customer_name && (
-                        <p className="text-sm mt-1">Cliente: {order.customer_name}</p>
-                      )}
-                    </div>
-                    <Badge variant={
-                      order.status === 'ready' ? 'default' : 
-                      order.status === 'preparing' ? 'secondary' : 'outline'
-                    }>
-                      {order.status === 'new' && 'Novo'}
-                      {order.status === 'confirmed' && 'Confirmado'}
-                      {order.status === 'preparing' && 'Preparando'}
-                      {order.status === 'ready' && 'Pronto'}
-                    </Badge>
-                  </div>
-
-                  <div className="space-y-2 mb-4">
-                    {order.order_items?.map((item: any) => (
-                      <div key={item.id} className="flex justify-between text-sm">
-                        <span>{item.quantity}x {item.name}</span>
-                        <span>R$ {item.total_price.toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex justify-between items-center pt-4 border-t">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Total</p>
-                      <p className="text-2xl font-bold">R$ {order.total.toFixed(2)}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {order.payment_method === 'cash' && 'Dinheiro'}
-                        {order.payment_method === 'credit_card' && 'Cartão Crédito'}
-                        {order.payment_method === 'debit_card' && 'Cartão Débito'}
-                        {order.payment_method === 'pix' && 'PIX'}
-                      </p>
-                    </div>
-                    <Button onClick={() => handleCloseOrder(order)} className="gap-2">
-                      <CheckCircle className="h-4 w-4" />
-                      Fechar Pedido
-                    </Button>
-                  </div>
-                </Card>
-              ))
-            )}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="new" className="mt-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <div className="lg:col-span-2">
           <Tabs value={selectedCategory} onValueChange={setSelectedCategory} className="w-full">
             <TabsList className="mb-4">
@@ -630,21 +555,111 @@ export default function PDV() {
                 <span className="text-lg font-semibold">Total:</span>
                 <span className="text-2xl font-bold">R$ {total.toFixed(2)}</span>
               </div>
-              <Button
-                className="w-full gap-2"
-                size="lg"
-                onClick={handleFinishOrder}
-                disabled={cart.length === 0}
-              >
-                <DollarSign className="h-5 w-5" />
-                Finalizar Pedido
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 gap-2"
+                  size="lg"
+                  onClick={handleFinishOrder}
+                  disabled={cart.length === 0}
+                >
+                  <DollarSign className="h-5 w-5" />
+                  Finalizar Pedido
+                </Button>
+              </div>
             </div>
           </Card>
         </div>
       </div>
-        </TabsContent>
-      </Tabs>
+
+      {/* Pedidos Pendentes */}
+      <div className="mt-8">
+        <div className="flex items-center gap-2 mb-4">
+          <Clock className="h-6 w-6" />
+          <h2 className="text-2xl font-bold">Pedidos Pendentes para Fechamento</h2>
+          <Badge variant="secondary" className="ml-2">{pendingOrders.length}</Badge>
+        </div>
+        
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {pendingOrders.length === 0 ? (
+            <Card className="p-8 text-center col-span-full">
+              <Clock className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+              <p className="text-muted-foreground">Nenhum pedido pendente</p>
+            </Card>
+          ) : (
+            pendingOrders.map((order) => (
+              <Card key={order.id} className="p-4">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h3 className="font-bold text-lg">#{order.order_number}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(order.created_at).toLocaleTimeString('pt-BR')}
+                    </p>
+                  </div>
+                  <Badge variant={
+                    order.status === 'ready' ? 'default' : 
+                    order.status === 'preparing' ? 'secondary' : 'outline'
+                  }>
+                    {order.status === 'new' && 'Novo'}
+                    {order.status === 'confirmed' && 'Confirmado'}
+                    {order.status === 'preparing' && 'Preparando'}
+                    {order.status === 'ready' && 'Pronto'}
+                  </Badge>
+                </div>
+
+                {order.customer_name && (
+                  <p className="text-sm mb-2">
+                    <strong>Cliente:</strong> {order.customer_name}
+                  </p>
+                )}
+
+                <div className="space-y-1 mb-3 max-h-32 overflow-y-auto">
+                  {order.order_items?.slice(0, 3).map((item: any) => (
+                    <div key={item.id} className="flex justify-between text-xs">
+                      <span className="truncate">{item.quantity}x {item.name}</span>
+                      <span className="ml-2 flex-shrink-0">R$ {item.total_price.toFixed(2)}</span>
+                    </div>
+                  ))}
+                  {order.order_items?.length > 3 && (
+                    <p className="text-xs text-muted-foreground">+ {order.order_items.length - 3} itens</p>
+                  )}
+                </div>
+
+                <div className="pt-3 border-t">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-semibold">Total:</span>
+                    <span className="text-xl font-bold">R$ {order.total.toFixed(2)}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    {order.payment_method === 'cash' && '💵 Dinheiro'}
+                    {order.payment_method === 'credit_card' && '💳 Cartão Crédito'}
+                    {order.payment_method === 'debit_card' && '💳 Cartão Débito'}
+                    {order.payment_method === 'pix' && '📱 PIX'}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => generatePrintReceipt(order, restaurantName, undefined, 'customer')}
+                    >
+                      <Printer className="h-3 w-3 mr-1" />
+                      Imprimir
+                    </Button>
+                    <Button 
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => handleCloseOrder(order)}
+                    >
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      Fechar
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   );
 }
