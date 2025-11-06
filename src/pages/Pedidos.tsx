@@ -232,12 +232,18 @@ export default function Pedidos() {
                   )}
 
                   <div className="space-y-2 mb-4">
-                    {order.order_items?.map((item: any) => (
-                      <div key={item.id} className="flex justify-between text-sm">
-                        <span>{item.quantity}x {item.name}</span>
-                        <span>R$ {item.total_price.toFixed(2)}</span>
+                    {order.order_items && order.order_items.length > 0 ? (
+                      order.order_items.map((item: any) => (
+                        <div key={item.id} className="flex justify-between text-sm">
+                          <span>{item.quantity}x {item.name}</span>
+                          <span>R$ {item.total_price.toFixed(2)}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-sm text-muted-foreground italic text-center py-2">
+                        Sem itens cadastrados
                       </div>
-                    ))}
+                    )}
                   </div>
 
                   {order.notes && (
@@ -309,12 +315,18 @@ export default function Pedidos() {
                     </Badge>
                   </div>
                   <div className="space-y-2 mb-4">
-                    {order.order_items?.map((item: any) => (
-                      <div key={item.id} className="flex justify-between text-sm">
-                        <span>{item.quantity}x {item.name}</span>
-                        {item.notes && <span className="text-xs text-muted-foreground">({item.notes})</span>}
+                    {order.order_items && order.order_items.length > 0 ? (
+                      order.order_items.map((item: any) => (
+                        <div key={item.id} className="flex justify-between text-sm">
+                          <span>{item.quantity}x {item.name}</span>
+                          {item.notes && <span className="text-xs text-muted-foreground">({item.notes})</span>}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-sm text-muted-foreground italic text-center py-2">
+                        Sem itens cadastrados
                       </div>
-                    ))}
+                    )}
                   </div>
                   <div className="flex justify-between items-center mb-4 text-lg font-bold">
                     <span>Total:</span>

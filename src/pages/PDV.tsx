@@ -126,7 +126,8 @@ export default function PDV() {
         .from('orders' as any)
         .select(`
           *,
-          order_items:order_items(*)
+          order_items:order_items(*),
+          tables(number)
         `)
         .in('status', ['new', 'confirmed', 'preparing', 'ready'])
         .order('created_at', { ascending: false });
@@ -594,6 +595,19 @@ export default function PDV() {
                     <p className="text-xs text-muted-foreground">
                       {new Date(order.created_at).toLocaleTimeString('pt-BR')}
                     </p>
+                    {/* Mostrar Mesa ou Tipo de Pedido */}
+                    {order.tables ? (
+                      <Badge variant="outline" className="mt-1">
+                        Mesa {order.tables.number}
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="mt-1">
+                        {order.delivery_type === 'online' && '🌐 Online'}
+                        {order.delivery_type === 'delivery' && '🚚 Entrega'}
+                        {order.delivery_type === 'pickup' && '🏪 Retirada'}
+                        {order.delivery_type === 'dine_in' && '🍽️ Local'}
+                      </Badge>
+                    )}
                   </div>
                   <Badge variant={
                     order.status === 'ready' ? 'default' : 
@@ -612,28 +626,39 @@ export default function PDV() {
                   </p>
                 )}
 
-                <div className="space-y-1 mb-3 max-h-32 overflow-y-auto">
-                  {order.order_items?.slice(0, 3).map((item: any) => (
-                    <div key={item.id} className="flex justify-between text-xs">
-                      <span className="truncate">{item.quantity}x {item.name}</span>
-                      <span className="ml-2 flex-shrink-0">R$ {item.total_price.toFixed(2)}</span>
-                    </div>
-                  ))}
-                  {order.order_items?.length > 3 && (
-                    <p className="text-xs text-muted-foreground">+ {order.order_items.length - 3} itens</p>
-                  )}
+                {order.customer_phone && (
+                  <p className="text-sm mb-2">
+                    <strong>Telefone:</strong> {order.customer_phone}
+                  </p>
+                )}
+
+                <div className="bg-muted/50 rounded-md p-2 mb-3">
+                  <p className="text-xs font-semibold mb-1">Itens do pedido:</p>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {order.order_items && order.order_items.length > 0 ? (
+                      order.order_items.map((item: any) => (
+                        <div key={item.id} className="flex justify-between text-xs">
+                          <span className="truncate">{item.quantity}x {item.name}</span>
+                          <span className="ml-2 flex-shrink-0">R$ {item.total_price.toFixed(2)}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">Sem itens</p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="pt-3 border-t">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-sm font-semibold">Total:</span>
-                    <span className="text-xl font-bold">R$ {order.total.toFixed(2)}</span>
+                    <span className="text-xl font-bold text-green-600">R$ {order.total.toFixed(2)}</span>
                   </div>
                   <p className="text-xs text-muted-foreground mb-3">
                     {order.payment_method === 'cash' && '💵 Dinheiro'}
                     {order.payment_method === 'credit_card' && '💳 Cartão Crédito'}
                     {order.payment_method === 'debit_card' && '💳 Cartão Débito'}
                     {order.payment_method === 'pix' && '📱 PIX'}
+                    {order.payment_method === 'pending' && '⏳ Pendente'}
                   </p>
                   <div className="flex gap-2">
                     <Button 
@@ -651,7 +676,7 @@ export default function PDV() {
                       onClick={() => handleCloseOrder(order)}
                     >
                       <CheckCircle className="h-3 w-3 mr-1" />
-                      Fechar
+                      Fechar Pedido
                     </Button>
                   </div>
                 </div>

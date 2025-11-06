@@ -211,6 +211,15 @@ export default function CustomerMenu() {
     try {
       const orderNumber = `PED${Date.now().toString().slice(-6)}`;
 
+      console.log('🛒 Criando pedido:', {
+        orderNumber,
+        customerName,
+        customerPhone,
+        deliveryType,
+        cart,
+        total
+      });
+
       // Create order
       const { data: order, error: orderError } = await supabase
         .from('orders')
@@ -233,7 +242,12 @@ export default function CustomerMenu() {
         .select()
         .single();
 
-      if (orderError) throw orderError;
+      if (orderError) {
+        console.error('❌ Erro ao criar pedido:', orderError);
+        throw orderError;
+      }
+
+      console.log('✅ Pedido criado:', order);
 
       // Insert order items
       const orderItems = cart.map(item => ({
@@ -245,18 +259,25 @@ export default function CustomerMenu() {
         total_price: (item.promotional_price || item.price) * item.quantity,
       }));
 
+      console.log('📦 Inserindo itens:', orderItems);
+
       const { error: itemsError } = await supabase
         .from('order_items')
         .insert(orderItems);
 
-      if (itemsError) throw itemsError;
+      if (itemsError) {
+        console.error('❌ Erro ao inserir itens:', itemsError);
+        throw itemsError;
+      }
+
+      console.log('✅ Itens inseridos com sucesso!');
 
       // Save customer data
       localStorage.setItem('customer_name', customerName);
       localStorage.setItem('customer_phone', customerPhone);
       if (customerCPF) localStorage.setItem('customer_cpf', customerCPF);
 
-      toast.success('Pedido realizado com sucesso! Número: ' + orderNumber);
+      toast.success(`Pedido realizado com sucesso! Número: ${orderNumber}`);
       setCart([]);
       setCheckoutOpen(false);
       setCartOpen(false);
@@ -265,8 +286,8 @@ export default function CustomerMenu() {
         setAddress({ street: '', number: '', neighborhood: '', complement: '', reference: '' });
       }
     } catch (error) {
-      console.error('Erro ao criar pedido:', error);
-      toast.error('Erro ao finalizar pedido');
+      console.error('❌ Erro geral ao criar pedido:', error);
+      toast.error('Erro ao finalizar pedido. Tente novamente.');
     }
   };
 

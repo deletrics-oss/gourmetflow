@@ -116,8 +116,17 @@ export default function TableCustomerMenu() {
       const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
       const orderNumber = `M${table?.number}-${Date.now().toString().slice(-4)}`;
 
+      console.log('🛒 Mesa - Criando pedido:', {
+        orderNumber,
+        tableId,
+        cart,
+        total
+      });
+
       if (order) {
         // Update existing order
+        console.log('📝 Adicionando itens ao pedido existente:', order.id);
+        
         const orderItems = cart.map(item => ({
           order_id: order.id,
           menu_item_id: item.id,
@@ -127,7 +136,14 @@ export default function TableCustomerMenu() {
           total_price: item.price * item.quantity
         }));
 
-        await supabase.from('order_items').insert(orderItems);
+        const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
+        
+        if (itemsError) {
+          console.error('❌ Erro ao inserir itens:', itemsError);
+          throw itemsError;
+        }
+
+        console.log('✅ Itens adicionados com sucesso!');
 
         const { data: allItems } = await supabase
           .from('order_items')
@@ -144,8 +160,12 @@ export default function TableCustomerMenu() {
             updated_at: new Date().toISOString()
           })
           .eq('id', order.id);
+
+        console.log('✅ Total atualizado:', newTotal);
       } else {
         // Create new order
+        console.log('🆕 Criando novo pedido para mesa');
+        
         const { data: newOrder, error: orderError } = await supabase
           .from('orders')
           .insert([{
@@ -159,7 +179,12 @@ export default function TableCustomerMenu() {
           .select()
           .single();
 
-        if (orderError) throw orderError;
+        if (orderError) {
+          console.error('❌ Erro ao criar pedido:', orderError);
+          throw orderError;
+        }
+
+        console.log('✅ Pedido criado:', newOrder);
 
         const orderItems = cart.map(item => ({
           order_id: newOrder.id,
@@ -170,7 +195,16 @@ export default function TableCustomerMenu() {
           total_price: item.price * item.quantity
         }));
 
-        await supabase.from('order_items').insert(orderItems);
+        console.log('📦 Inserindo itens:', orderItems);
+
+        const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
+        
+        if (itemsError) {
+          console.error('❌ Erro ao inserir itens:', itemsError);
+          throw itemsError;
+        }
+
+        console.log('✅ Itens inseridos com sucesso!');
 
         await supabase
           .from('tables')
@@ -182,8 +216,8 @@ export default function TableCustomerMenu() {
       setCart([]);
       loadData();
     } catch (error) {
-      console.error('Erro ao finalizar pedido:', error);
-      toast.error('Erro ao enviar pedido');
+      console.error('❌ Erro geral ao finalizar pedido:', error);
+      toast.error('Erro ao enviar pedido. Tente novamente.');
     }
   };
 
