@@ -50,6 +50,7 @@ export default function PDV() {
   const [restaurantName, setRestaurantName] = useState("Restaurante");
   const [pendingOrders, setPendingOrders] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"new" | "pending">("new");
+  const [includeServiceFee, setIncludeServiceFee] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -225,7 +226,9 @@ export default function PDV() {
     setCart(cart.filter((item) => item.id !== id));
   };
 
-  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const serviceFee = includeServiceFee ? subtotal * 0.1 : 0;
+  const total = subtotal + serviceFee;
 
   const handleFinishOrder = async () => {
     if (cart.length === 0) {
@@ -266,7 +269,8 @@ export default function PDV() {
           table_id: deliveryType === "dine_in" ? selectedTable : null,
           status: 'new',
           payment_method: paymentMethod,
-          subtotal: total,
+          subtotal: subtotal,
+          service_fee: serviceFee,
           total: total,
           customer_name: customerName || null,
           customer_phone: customerPhone || null,
@@ -312,7 +316,8 @@ export default function PDV() {
         delivery_type: deliveryType,
         customer_name: customerName,
         customer_phone: customerPhone,
-        subtotal: total,
+        subtotal: subtotal,
+        service_fee: serviceFee,
         total: total,
         payment_method: paymentMethod,
         notes: null,
@@ -552,9 +557,29 @@ export default function PDV() {
             </div>
 
             <div className="border-t pt-4">
-              <div className="flex justify-between items-center mb-4">
+              <div className="space-y-2 mb-4">
+                <div className="flex justify-between text-sm">
+                  <span>Subtotal:</span>
+                  <span>R$ {subtotal.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeServiceFee}
+                      onChange={(e) => setIncludeServiceFee(e.target.checked)}
+                      className="rounded"
+                    />
+                    Taxa de serviço 10%
+                  </label>
+                  {includeServiceFee && (
+                    <span className="text-sm">R$ {serviceFee.toFixed(2)}</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-between items-center mb-4 border-t pt-4">
                 <span className="text-lg font-semibold">Total:</span>
-                <span className="text-2xl font-bold">R$ {total.toFixed(2)}</span>
+                <span className="text-2xl font-bold text-green-600">R$ {total.toFixed(2)}</span>
               </div>
               <div className="flex gap-2">
                 <Button

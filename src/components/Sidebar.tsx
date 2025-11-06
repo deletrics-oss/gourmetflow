@@ -1,4 +1,4 @@
-import { LayoutDashboard, ShoppingCart, UtensilsCrossed, Utensils, Receipt, ChefHat, BarChart3, Settings, Tag, DollarSign, Monitor, TrendingUp, CreditCard, Package, Users, LogOut, LucideIcon } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, UtensilsCrossed, Utensils, Receipt, ChefHat, BarChart3, Settings, Tag, DollarSign, Monitor, TrendingUp, CreditCard, Package, Users, LogOut, LucideIcon, Truck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -26,6 +26,11 @@ const mainNavItems: NavItem[] = [
 const marketingNavItems: NavItem[] = [
   { title: "Cupons", href: "/cupons", icon: Tag },
   { title: "Cashback", href: "/cashback", icon: DollarSign },
+];
+
+const cadastrosNavItems: NavItem[] = [
+  { title: "Clientes", href: "/clientes", icon: Users },
+  { title: "Fornecedores", href: "/fornecedores", icon: Truck },
 ];
 
 const monitorNavItems: NavItem[] = [
@@ -82,6 +87,29 @@ export function Sidebar() {
         <div className="mt-6 space-y-1 px-3">
           <p className="px-3 text-xs font-semibold text-muted-foreground">MARKETING</p>
           {marketingNavItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = location.pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                to={item.href}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent"
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {item.title}
+              </Link>
+            );
+          })}
+        </div>
+
+        <div className="mt-6 space-y-1 px-3">
+          <p className="px-3 text-xs font-semibold text-muted-foreground">CADASTROS</p>
+          {cadastrosNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.href;
             return (

@@ -25,6 +25,8 @@ import MonitorCozinha from "./pages/MonitorCozinha";
 import MonitorGestor from "./pages/MonitorGestor";
 import Estoque from "./pages/Estoque";
 import Usuarios from "./pages/Usuarios";
+import Clientes from "./pages/Clientes";
+import Fornecedores from "./pages/Fornecedores";
 import NotFound from "./pages/NotFound";
 import CustomerMenu from "./pages/CustomerMenu";
 import TableCustomerMenu from "./pages/TableCustomerMenu";
@@ -71,6 +73,8 @@ const App = () => (
                       <Route path="/configuracoes" element={<Configuracoes />} />
                       <Route path="/cupons" element={<Cupons />} />
                       <Route path="/cashback" element={<Cashback />} />
+                      <Route path="/clientes" element={<Clientes />} />
+                      <Route path="/fornecedores" element={<Fornecedores />} />
                       <Route path="/usuarios" element={
                         <ProtectedRoute requireAdmin>
                           <Usuarios />
