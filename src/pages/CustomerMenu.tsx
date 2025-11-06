@@ -20,17 +20,20 @@ import {
   User,
   MessageCircle,
   LogOut,
-  Gift
+  Gift,
+  Package
 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 
 interface MenuItem {
@@ -62,10 +65,15 @@ export default function CustomerMenu() {
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [promotionDialogOpen, setPromotionDialogOpen] = useState(false);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [ordersDialogOpen, setOrdersDialogOpen] = useState(false);
+  const [restaurantSettings, setRestaurantSettings] = useState<any>(null);
+  const [customerOrders, setCustomerOrders] = useState<any[]>([]);
   
   // Checkout form
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerCPF, setCustomerCPF] = useState('');
   const [deliveryType, setDeliveryType] = useState<'delivery' | 'pickup'>('delivery');
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit_card' | 'cash'>('pix');
   const [address, setAddress] = useState({
@@ -79,6 +87,15 @@ export default function CustomerMenu() {
 
   useEffect(() => {
     loadData();
+    loadRestaurantSettings();
+    // Load saved customer data
+    const savedName = localStorage.getItem('customer_name');
+    const savedPhone = localStorage.getItem('customer_phone');
+    const savedCPF = localStorage.getItem('customer_cpf');
+    if (savedName) setCustomerName(savedName);
+    if (savedPhone) setCustomerPhone(savedPhone);
+    if (savedCPF) setCustomerCPF(savedCPF);
+    
     // Show promotion dialog after 2 seconds
     const timer = setTimeout(() => {
       setPromotionDialogOpen(true);
@@ -98,6 +115,43 @@ export default function CustomerMenu() {
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       toast.error('Erro ao carregar o cardápio');
+    }
+  };
+
+  const loadRestaurantSettings = async () => {
+    try {
+      const { data } = await supabase
+        .from('restaurant_settings')
+        .select('*')
+        .single();
+      
+      if (data) setRestaurantSettings(data);
+    } catch (error) {
+      console.error('Erro ao carregar configurações:', error);
+    }
+  };
+
+  const loadCustomerOrders = async () => {
+    if (!customerPhone) {
+      toast.error('Informe seu telefone para ver seus pedidos');
+      return;
+    }
+    
+    try {
+      const { data } = await supabase
+        .from('orders')
+        .select('*, order_items(*)')
+        .eq('customer_phone', customerPhone)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      
+      if (data) {
+        setCustomerOrders(data);
+        setOrdersDialogOpen(true);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar pedidos:', error);
+      toast.error('Erro ao carregar pedidos');
     }
   };
 
@@ -157,44 +211,108 @@ export default function CustomerMenu() {
     try {
       const orderNumber = `PED${Date.now().toString().slice(-6)}`;
 
-      const { error } = await supabase.from('orders').insert({
-        order_number: orderNumber,
-        customer_name: customerName,
-        customer_phone: customerPhone,
-        delivery_type: deliveryType === 'delivery' ? 'delivery' : 'pickup',
-        status: 'new',
-        subtotal: cartTotal,
-        delivery_fee: deliveryFee,
-        service_fee: 0,
-        discount: 0,
-        total: total,
-        payment_method: paymentMethod,
-        delivery_address: deliveryType === 'delivery' ? address : null,
-        notes: observations || null,
-      });
+      // Create order
+      const { data: order, error: orderError } = await supabase
+        .from('orders')
+        .insert({
+          order_number: orderNumber,
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          customer_cpf: customerCPF || null,
+          delivery_type: deliveryType === 'delivery' ? 'delivery' : 'pickup',
+          status: 'new',
+          subtotal: cartTotal,
+          delivery_fee: deliveryFee,
+          service_fee: 0,
+          discount: 0,
+          total: total,
+          payment_method: paymentMethod,
+          delivery_address: deliveryType === 'delivery' ? address : null,
+          notes: observations || null,
+        })
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (orderError) throw orderError;
 
-      toast.success('Pedido realizado com sucesso!');
+      // Insert order items
+      const orderItems = cart.map(item => ({
+        order_id: order.id,
+        menu_item_id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        unit_price: item.promotional_price || item.price,
+        total_price: (item.promotional_price || item.price) * item.quantity,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItems);
+
+      if (itemsError) throw itemsError;
+
+      // Save customer data
+      localStorage.setItem('customer_name', customerName);
+      localStorage.setItem('customer_phone', customerPhone);
+      if (customerCPF) localStorage.setItem('customer_cpf', customerCPF);
+
+      toast.success('Pedido realizado com sucesso! Número: ' + orderNumber);
       setCart([]);
       setCheckoutOpen(false);
       setCartOpen(false);
-      
-      // Reset form
-      setCustomerName('');
-      setCustomerPhone('');
       setObservations('');
-      setAddress({ street: '', number: '', neighborhood: '', complement: '', reference: '' });
+      if (deliveryType === 'delivery') {
+        setAddress({ street: '', number: '', neighborhood: '', complement: '', reference: '' });
+      }
     } catch (error) {
       console.error('Erro ao criar pedido:', error);
       toast.error('Erro ao finalizar pedido');
     }
   };
 
+  const saveProfile = () => {
+    if (!customerName || !customerPhone) {
+      toast.error('Preencha seu nome e telefone');
+      return;
+    }
+    
+    localStorage.setItem('customer_name', customerName);
+    localStorage.setItem('customer_phone', customerPhone);
+    if (customerCPF) localStorage.setItem('customer_cpf', customerCPF);
+    
+    toast.success('Dados salvos com sucesso!');
+    setProfileDialogOpen(false);
+  };
+
+  const openMap = () => {
+    if (!restaurantSettings?.address) {
+      toast.error('Endereço do restaurante não configurado');
+      return;
+    }
+    
+    const addr = restaurantSettings.address;
+    const fullAddress = `${addr.street || ''}, ${addr.number || ''}, ${addr.neighborhood || ''}, ${addr.city || ''}, ${addr.state || ''}`;
+    const encodedAddress = encodeURIComponent(fullAddress);
+    window.open(`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`, '_blank');
+  };
+
   const openWhatsApp = () => {
-    const phone = '5511999999999'; // Replace with restaurant phone
+    const phone = restaurantSettings?.phone?.replace(/\D/g, '') || '5511999999999';
     const message = encodeURIComponent('Olá! Gostaria de fazer um pedido.');
     window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
+  };
+
+  const getStatusBadge = (status: string) => {
+    const statusMap: any = {
+      new: { label: 'Novo', className: 'bg-blue-500' },
+      confirmed: { label: 'Confirmado', className: 'bg-green-500' },
+      preparing: { label: 'Preparando', className: 'bg-yellow-500' },
+      ready: { label: 'Pronto', className: 'bg-purple-500' },
+      out_for_delivery: { label: 'Saiu para entrega', className: 'bg-indigo-500' },
+      completed: { label: 'Concluído', className: 'bg-green-600' },
+      cancelled: { label: 'Cancelado', className: 'bg-red-500' },
+    };
+    return statusMap[status] || { label: status, className: 'bg-gray-500' };
   };
 
   return (
@@ -218,7 +336,7 @@ export default function CustomerMenu() {
                   <ShoppingBag className="h-5 w-5" />
                   Fazer Pedido
                 </Button>
-                <Button variant="ghost" className="w-full justify-start gap-3">
+                <Button variant="ghost" className="w-full justify-start gap-3" onClick={loadCustomerOrders}>
                   <ShoppingCart className="h-5 w-5" />
                   Meus Pedidos
                 </Button>
@@ -226,7 +344,7 @@ export default function CustomerMenu() {
                   <Gift className="h-5 w-5" />
                   Cartão Fidelidade
                 </Button>
-                <Button variant="ghost" className="w-full justify-start gap-3">
+                <Button variant="ghost" className="w-full justify-start gap-3" onClick={() => setProfileDialogOpen(true)}>
                   <User className="h-5 w-5" />
                   Meu Cadastro
                 </Button>
@@ -234,7 +352,7 @@ export default function CustomerMenu() {
                   <MessageCircle className="h-5 w-5" />
                   Chamar no WhatsApp
                 </Button>
-                <Button variant="ghost" className="w-full justify-start gap-3">
+                <Button variant="ghost" className="w-full justify-start gap-3" onClick={openMap}>
                   <MapPin className="h-5 w-5" />
                   Endereço no Mapa
                 </Button>
@@ -484,6 +602,14 @@ export default function CustomerMenu() {
                     onChange={(e) => setCustomerPhone(e.target.value)}
                   />
                 </div>
+                <div>
+                  <Label>CPF (opcional)</Label>
+                  <Input
+                    placeholder="000.000.000-00"
+                    value={customerCPF}
+                    onChange={(e) => setCustomerCPF(e.target.value)}
+                  />
+                </div>
               </div>
             </div>
 
@@ -646,6 +772,101 @@ export default function CustomerMenu() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Profile Dialog */}
+      <Dialog open={profileDialogOpen} onOpenChange={setProfileDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Meu Cadastro</DialogTitle>
+            <DialogDescription>
+              Salve seus dados para pedidos mais rápidos (opcional)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Nome completo</Label>
+              <Input
+                placeholder="Seu nome"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Telefone (WhatsApp)</Label>
+              <Input
+                placeholder="(00) 00000-0000"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>CPF (opcional)</Label>
+              <Input
+                placeholder="000.000.000-00"
+                value={customerCPF}
+                onChange={(e) => setCustomerCPF(e.target.value)}
+              />
+            </div>
+            <Button className="w-full" onClick={saveProfile}>
+              Salvar Dados
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Orders Dialog */}
+      <Dialog open={ordersDialogOpen} onOpenChange={setOrdersDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Meus Pedidos</DialogTitle>
+          </DialogHeader>
+          {customerOrders.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Package className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p>Nenhum pedido encontrado</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {customerOrders.map((order: any) => {
+                const status = getStatusBadge(order.status);
+                return (
+                  <Card key={order.id} className="p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <p className="font-bold text-lg">#{order.order_number}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {new Date(order.created_at).toLocaleString('pt-BR')}
+                        </p>
+                      </div>
+                      <Badge className={status.className}>{status.label}</Badge>
+                    </div>
+                    
+                    <div className="space-y-2 mb-3">
+                      {order.order_items?.map((item: any) => (
+                        <div key={item.id} className="flex justify-between text-sm">
+                          <span>{item.quantity}x {item.name}</span>
+                          <span>R$ {item.total_price.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <div className="border-t pt-3 flex justify-between font-bold">
+                      <span>Total</span>
+                      <span className="text-green-600">R$ {order.total.toFixed(2)}</span>
+                    </div>
+                    
+                    {order.notes && (
+                      <div className="mt-3 text-sm text-muted-foreground">
+                        <strong>Obs:</strong> {order.notes}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
