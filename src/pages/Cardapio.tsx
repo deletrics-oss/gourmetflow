@@ -285,24 +285,25 @@ export default function Cardapio() {
                     className="bg-white"
                   />
                 </div>
-                <div className="relative h-48 w-full overflow-hidden">
-                  <img
-                    src={item.image}
-                    alt={item.name}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
+                {item.image_url && (
+                  <div className="relative h-48 w-full overflow-hidden">
+                    <img
+                      src={item.image_url}
+                      alt={item.name}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                )}
                 <div className="p-4">
-                  <Badge variant="outline" className="mb-2">{item.category}</Badge>
                   <h3 className="font-semibold text-lg mb-1">{item.name}</h3>
                   {item.description && (
                     <p className="text-sm text-muted-foreground mb-3">{item.description}</p>
                   )}
                   <div className="flex items-center gap-2 mb-4">
-                    {item.promotionalPrice ? (
+                    {item.promotional_price ? (
                       <>
                         <span className="text-lg font-bold text-status-new">
-                          R$ {item.promotionalPrice.toFixed(2)}
+                          R$ {item.promotional_price.toFixed(2)}
                         </span>
                         <span className="text-sm text-muted-foreground line-through">
                           R$ {item.price.toFixed(2)}

@@ -1,17 +1,69 @@
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
-import { useApp } from "@/contexts/AppContext";
 import { ChefHat, Clock, AlertTriangle, CheckCircle, Package, Volume2, Gauge } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AudioManager } from "@/components/AudioManager";
 import { Slider } from "@/components/ui/slider";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 export default function MonitorCozinha() {
-  const { orders } = useApp();
+  const [orders, setOrders] = useState<any[]>([]);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [slideSpeed, setSlideSpeed] = useState(8000);
+
+  useEffect(() => {
+    loadOrders();
+    
+    // Realtime subscription
+    const channel = supabase
+      .channel('kitchen-orders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        loadOrders();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const loadOrders = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items(*),
+          tables(number)
+        `)
+        .in('status', ['new', 'preparing', 'ready'])
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setOrders(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar pedidos:', error);
+    }
+  };
+
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: newStatus })
+        .eq('id', orderId);
+
+      if (error) throw error;
+      
+      toast.success('Status atualizado!');
+    } catch (error) {
+      console.error('Erro ao atualizar:', error);
+      toast.error('Erro ao atualizar status');
+    }
+  };
 
   const newOrders = orders.filter((o) => o.status === "new");
   const preparingOrders = orders.filter((o) => o.status === "preparing");
@@ -19,7 +71,7 @@ export default function MonitorCozinha() {
   
   // Pedidos atrasados (mais de 30 minutos)
   const delayedOrders = orders.filter((o) => {
-    const minutes = (new Date().getTime() - new Date(o.createdAt).getTime()) / 60000;
+    const minutes = (new Date().getTime() - new Date(o.created_at).getTime()) / 60000;
     return o.status !== "completed" && minutes > 30;
   });
 
@@ -154,31 +206,67 @@ export default function MonitorCozinha() {
               <Card key={order.id} className="p-6 bg-card">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h3 className="text-3xl font-bold">#{order.number}</h3>
-                    {order.table && (
+                    <h3 className="text-3xl font-bold">#{order.order_number}</h3>
+                    {order.tables && (
                       <Badge variant="outline" className="mt-2">
-                        Mesa {order.table}
+                        Mesa {order.tables.number}
                       </Badge>
                     )}
                   </div>
                   <div className="text-right">
                     <Badge className={`bg-${currentSlideData.color}`}>
-                      {formatTime(order.createdAt)}
+                      {formatTime(order.created_at)}
                     </Badge>
                   </div>
                 </div>
                 <div className="space-y-2 mb-4">
-                  {order.items.map((item) => (
-                    <div key={item.id} className="flex justify-between text-sm">
-                      <span>
+                  {order.order_items?.map((item: any) => (
+                    <div key={item.id} className="flex justify-between text-lg">
+                      <span className="font-semibold">
                         {item.quantity}x {item.name}
                       </span>
+                      {item.notes && (
+                        <Badge variant="outline" className="ml-2">
+                          {item.notes}
+                        </Badge>
+                      )}
                     </div>
                   ))}
                 </div>
-                <div className="border-t pt-3 flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">{order.deliveryType}</span>
+                <div className="border-t pt-3 mb-4 flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">
+                    {order.delivery_type === 'delivery' ? 'Entrega' : 
+                     order.delivery_type === 'pickup' ? 'Retirada' : 'Mesa'}
+                  </span>
                   <span className="text-xl font-bold">R$ {order.total.toFixed(2)}</span>
+                </div>
+
+                {/* Botões de ação */}
+                <div className="flex gap-2">
+                  {order.status === 'new' && (
+                    <Button 
+                      className="flex-1"
+                      onClick={() => updateOrderStatus(order.id, 'preparing')}
+                    >
+                      Iniciar Preparo
+                    </Button>
+                  )}
+                  {order.status === 'preparing' && (
+                    <Button 
+                      className="flex-1"
+                      onClick={() => updateOrderStatus(order.id, 'ready')}
+                    >
+                      Marcar Pronto
+                    </Button>
+                  )}
+                  {order.status === 'ready' && (
+                    <Button 
+                      className="flex-1"
+                      onClick={() => updateOrderStatus(order.id, 'completed')}
+                    >
+                      Concluir
+                    </Button>
+                  )}
                 </div>
               </Card>
             ))

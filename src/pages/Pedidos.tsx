@@ -1,24 +1,109 @@
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { DollarSign, ShoppingBag, TrendingUp, Clock, Package, ChefHat, Truck, CheckCircle2 } from "lucide-react";
+import { DollarSign, ShoppingBag, TrendingUp, Clock, Package, ChefHat, Truck, CheckCircle2, Phone, User, MapPin, FileText } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { useApp } from "@/contexts/AppContext";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 export default function Pedidos() {
-  const { orders, updateOrderStatus } = useApp();
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadOrders();
+    
+    // Realtime subscription
+    const channel = supabase
+      .channel('orders-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        loadOrders();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const loadOrders = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items(*),
+          tables(number)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setOrders(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar pedidos:', error);
+      toast.error('Erro ao carregar pedidos');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: newStatus })
+        .eq('id', orderId);
+
+      if (error) throw error;
+      
+      toast.success('Status atualizado!');
+      loadOrders();
+    } catch (error) {
+      console.error('Erro ao atualizar status:', error);
+      toast.error('Erro ao atualizar status');
+    }
+  };
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const todayOrders = orders.filter((o) => new Date(o.createdAt) >= today);
-  const totalRevenue = todayOrders.reduce((sum, o) => sum + o.total, 0);
+  const todayOrders = orders.filter((o) => new Date(o.created_at) >= today);
+  const totalRevenue = todayOrders.reduce((sum, o) => sum + (o.total || 0), 0);
   const averageTicket = todayOrders.length > 0 ? totalRevenue / todayOrders.length : 0;
 
   const newOrders = orders.filter((o) => o.status === "new");
   const preparingOrders = orders.filter((o) => o.status === "preparing");
   const readyOrders = orders.filter((o) => o.status === "ready");
   const completedOrders = todayOrders.filter((o) => o.status === "completed");
+
+  const getDeliveryTypeLabel = (type: string) => {
+    const labels: any = {
+      'delivery': 'Entrega',
+      'pickup': 'Retirada',
+      'dine_in': 'Consumo Local'
+    };
+    return labels[type] || type;
+  };
+
+  const getPaymentMethodLabel = (method: string) => {
+    const labels: any = {
+      'cash': 'Dinheiro',
+      'credit_card': 'Cartão Crédito',
+      'debit_card': 'Cartão Débito',
+      'pix': 'PIX',
+      'pending': 'Pendente'
+    };
+    return labels[method] || method;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background p-8">
@@ -114,23 +199,86 @@ export default function Pedidos() {
                 <Card key={order.id} className="p-6">
                   <div className="flex justify-between items-start mb-4">
                     <div>
-                      <h3 className="text-2xl font-bold">#{order.number}</h3>
-                      {order.table && <Badge variant="outline" className="mt-2">Mesa {order.table}</Badge>}
+                      <h3 className="text-2xl font-bold">#{order.order_number}</h3>
+                      {order.tables && <Badge variant="outline" className="mt-2">Mesa {order.tables.number}</Badge>}
                     </div>
-                    <Badge className="bg-status-new text-status-new-foreground">{order.deliveryType}</Badge>
+                    <Badge className="bg-status-new text-status-new-foreground">
+                      {getDeliveryTypeLabel(order.delivery_type)}
+                    </Badge>
                   </div>
+
+                  {/* Informações do Cliente */}
+                  {(order.customer_name || order.customer_phone) && (
+                    <div className="bg-muted/50 p-3 rounded-lg mb-4 space-y-1">
+                      {order.customer_name && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <User className="h-3 w-3" />
+                          <span>{order.customer_name}</span>
+                        </div>
+                      )}
+                      {order.customer_phone && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <Phone className="h-3 w-3" />
+                          <span>{order.customer_phone}</span>
+                        </div>
+                      )}
+                      {order.delivery_address && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <MapPin className="h-3 w-3" />
+                          <span className="text-xs">{order.delivery_address.street}, {order.delivery_address.number}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="space-y-2 mb-4">
-                    {order.items.map((item) => (
+                    {order.order_items?.map((item: any) => (
                       <div key={item.id} className="flex justify-between text-sm">
                         <span>{item.quantity}x {item.name}</span>
-                        <span>R$ {(item.price * item.quantity).toFixed(2)}</span>
+                        <span>R$ {item.total_price.toFixed(2)}</span>
                       </div>
                     ))}
                   </div>
-                  <div className="border-t pt-4 flex justify-between items-center mb-4">
-                    <span className="font-bold">Total:</span>
-                    <span className="text-xl font-bold">R$ {order.total.toFixed(2)}</span>
+
+                  {order.notes && (
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg mb-4">
+                      <div className="flex items-start gap-2 text-sm">
+                        <FileText className="h-4 w-4 mt-0.5" />
+                        <div>
+                          <p className="font-semibold mb-1">Observações:</p>
+                          <p>{order.notes}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="border-t pt-4 mb-4 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Subtotal:</span>
+                      <span>R$ {order.subtotal.toFixed(2)}</span>
+                    </div>
+                    {order.delivery_fee > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span>Taxa de Entrega:</span>
+                        <span>R$ {order.delivery_fee.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {order.discount > 0 && (
+                      <div className="flex justify-between text-sm text-green-600">
+                        <span>Desconto:</span>
+                        <span>-R$ {order.discount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center font-bold text-lg border-t pt-2">
+                      <span>Total:</span>
+                      <span>R$ {order.total.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-muted-foreground">
+                      <span>Pagamento:</span>
+                      <span>{getPaymentMethodLabel(order.payment_method)}</span>
+                    </div>
                   </div>
+
                   <Button className="w-full" onClick={() => updateOrderStatus(order.id, "preparing")}>
                     Iniciar Preparo
                   </Button>
@@ -153,17 +301,24 @@ export default function Pedidos() {
                 <Card key={order.id} className="p-6">
                   <div className="flex justify-between items-start mb-4">
                     <div>
-                      <h3 className="text-2xl font-bold">#{order.number}</h3>
-                      {order.table && <Badge variant="outline" className="mt-2">Mesa {order.table}</Badge>}
+                      <h3 className="text-2xl font-bold">#{order.order_number}</h3>
+                      {order.tables && <Badge variant="outline" className="mt-2">Mesa {order.tables.number}</Badge>}
                     </div>
-                    <Badge className="bg-status-preparing text-status-preparing-foreground">{order.deliveryType}</Badge>
+                    <Badge className="bg-status-preparing text-status-preparing-foreground">
+                      {getDeliveryTypeLabel(order.delivery_type)}
+                    </Badge>
                   </div>
                   <div className="space-y-2 mb-4">
-                    {order.items.map((item) => (
+                    {order.order_items?.map((item: any) => (
                       <div key={item.id} className="flex justify-between text-sm">
                         <span>{item.quantity}x {item.name}</span>
+                        {item.notes && <span className="text-xs text-muted-foreground">({item.notes})</span>}
                       </div>
                     ))}
+                  </div>
+                  <div className="flex justify-between items-center mb-4 text-lg font-bold">
+                    <span>Total:</span>
+                    <span>R$ {order.total.toFixed(2)}</span>
                   </div>
                   <Button className="w-full" onClick={() => updateOrderStatus(order.id, "ready")}>
                     Marcar como Pronto
@@ -185,11 +340,20 @@ export default function Pedidos() {
               {readyOrders.map((order) => (
                 <Card key={order.id} className="p-6">
                   <div className="flex justify-between items-start mb-4">
-                    <h3 className="text-2xl font-bold">#{order.number}</h3>
-                    <Badge className="bg-status-ready text-status-ready-foreground">{order.deliveryType}</Badge>
+                    <div>
+                      <h3 className="text-2xl font-bold">#{order.order_number}</h3>
+                      {order.tables && <Badge variant="outline" className="mt-2">Mesa {order.tables.number}</Badge>}
+                    </div>
+                    <Badge className="bg-status-ready text-status-ready-foreground">
+                      {getDeliveryTypeLabel(order.delivery_type)}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between items-center mb-4">
+                    <span className="font-semibold">Total:</span>
+                    <span className="text-xl font-bold">R$ {order.total.toFixed(2)}</span>
                   </div>
                   <Button className="w-full" onClick={() => updateOrderStatus(order.id, "completed")}>
-                    Finalizar Pedido
+                    Concluir
                   </Button>
                 </Card>
               ))}
@@ -207,8 +371,18 @@ export default function Pedidos() {
             <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
               {completedOrders.map((order) => (
                 <Card key={order.id} className="p-4">
-                  <h3 className="text-lg font-bold mb-2">#{order.number}</h3>
-                  <p className="text-sm text-muted-foreground">R$ {order.total.toFixed(2)}</p>
+                  <h3 className="text-lg font-bold mb-2">#{order.order_number}</h3>
+                  <div className="space-y-1">
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Total:</span> R$ {order.total.toFixed(2)}
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Tipo:</span> {getDeliveryTypeLabel(order.delivery_type)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(order.created_at).toLocaleTimeString('pt-BR')}
+                    </p>
+                  </div>
                 </Card>
               ))}
             </div>

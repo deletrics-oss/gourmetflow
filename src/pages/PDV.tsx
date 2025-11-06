@@ -133,6 +133,25 @@ export default function PDV() {
     }
 
     try {
+      // Verificar se mesa existe
+      let table_id = null;
+      if (deliveryType === "dine_in" && tableNumber) {
+        const { data: tableData } = await supabase
+          .from('tables')
+          .select('id')
+          .eq('number', parseInt(tableNumber))
+          .single();
+        
+        if (tableData) {
+          table_id = tableData.id;
+          // Atualizar status da mesa para ocupada
+          await supabase
+            .from('tables')
+            .update({ status: 'occupied' })
+            .eq('id', table_id);
+        }
+      }
+
       // Criar pedido
       const orderNumber = `PDV${Date.now().toString().slice(-6)}`;
       const { data: orderData, error: orderError } = await supabase
@@ -140,8 +159,8 @@ export default function PDV() {
         .insert([{
           order_number: orderNumber,
           delivery_type: deliveryType,
-          table_id: deliveryType === "dine_in" && tableNumber ? tableNumber : null,
-          status: 'confirmed',
+          table_id: table_id,
+          status: 'new',
           payment_method: paymentMethod,
           subtotal: total,
           total: total,
@@ -174,6 +193,7 @@ export default function PDV() {
 
       setCart([]);
       setTableNumber("");
+      loadMenuItems(); // Recarregar para atualizar estado
     } catch (error) {
       console.error('Erro ao criar pedido:', error);
       toast({

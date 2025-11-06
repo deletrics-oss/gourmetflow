@@ -167,7 +167,31 @@ export default function Comandas() {
                   <Plus className="h-3 w-3 mr-1" />
                   Adicionar
                 </Button>
-                <Button size="sm" className="flex-1">
+                <Button 
+                  size="sm" 
+                  className="flex-1"
+                  onClick={async () => {
+                    try {
+                      await supabase
+                        .from('orders')
+                        .update({ status: 'completed' })
+                        .eq('id', comanda.id);
+                      
+                      // Liberar mesa
+                      if (comanda.table_id) {
+                        await supabase
+                          .from('tables')
+                          .update({ status: 'free' })
+                          .eq('id', comanda.table_id);
+                      }
+                      
+                      toast.success('Comanda fechada!');
+                      loadData();
+                    } catch (error) {
+                      toast.error('Erro ao fechar comanda');
+                    }
+                  }}
+                >
                   Fechar
                 </Button>
               </div>
