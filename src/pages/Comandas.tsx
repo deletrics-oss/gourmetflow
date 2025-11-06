@@ -3,11 +3,13 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Users, Plus, Search, Clock, DollarSign } from "lucide-react";
+import { Users, Plus, Search, Clock, DollarSign, Eye, Printer } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { AddComandaDialog } from "@/components/dialogs/AddComandaDialog";
 import { AddItemsToComandaDialog } from "@/components/dialogs/AddItemsToComandaDialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { generatePrintReceipt } from "@/components/PrintReceipt";
 
 export default function Comandas() {
   const [comandas, setComandas] = useState<any[]>([]);
@@ -23,10 +25,21 @@ export default function Comandas() {
 
   const loadData = async () => {
     try {
-      // Load orders (comandas)
+      // Load orders (comandas) with items
       const { data: orders, error: ordersError } = await supabase
-        .from('orders')
-        .select('*, tables(number)')
+        .from('orders' as any)
+        .select(`
+          *,
+          tables(number),
+          order_items(
+            id,
+            name,
+            quantity,
+            unit_price,
+            total_price,
+            notes
+          )
+        `)
         .eq('delivery_type', 'dine_in')
         .in('status', ['new', 'confirmed', 'preparing', 'ready'])
         .order('created_at', { ascending: false });
@@ -34,7 +47,7 @@ export default function Comandas() {
       if (ordersError) throw ordersError;
 
       const { data: tablesData, error: tablesError } = await supabase
-        .from('tables')
+        .from('tables' as any)
         .select('*')
         .order('number');
 
@@ -154,33 +167,74 @@ export default function Comandas() {
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              <Collapsible>
+                <CollapsibleTrigger asChild>
+                  <Button variant="outline" size="sm" className="w-full mb-3">
+                    <Eye className="h-4 w-4 mr-2" />
+                    Ver Itens ({comanda.order_items?.length || 0})
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-2 mb-3">
+                  {comanda.order_items?.map((item: any) => (
+                    <div key={item.id} className="p-2 bg-muted/50 rounded text-sm">
+                      <div className="flex justify-between">
+                        <span>{item.quantity}x {item.name}</span>
+                        <span className="font-medium">R$ {item.total_price.toFixed(2)}</span>
+                      </div>
+                      {item.notes && (
+                        <p className="text-xs text-muted-foreground mt-1">Obs: {item.notes}</p>
+                      )}
+                    </div>
+                  ))}
+                </CollapsibleContent>
+              </Collapsible>
+
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      setSelectedOrderId(comanda.id);
+                      setAddItemsDialogOpen(true);
+                    }}
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Adicionar
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      generatePrintReceipt(
+                        comanda,
+                        "GourmetFlow", // Pode vir das configurações
+                        comanda.tables?.number,
+                        'kitchen'
+                      );
+                    }}
+                  >
+                    <Printer className="h-3 w-3 mr-1" />
+                    Imprimir
+                  </Button>
+                </div>
                 <Button 
-                  variant="outline" 
                   size="sm" 
-                  className="flex-1"
-                  onClick={() => {
-                    setSelectedOrderId(comanda.id);
-                    setAddItemsDialogOpen(true);
-                  }}
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Adicionar
-                </Button>
-                <Button 
-                  size="sm" 
-                  className="flex-1"
+                  className="w-full"
                   onClick={async () => {
                     try {
                       await supabase
-                        .from('orders')
-                        .update({ status: 'completed' })
+                        .from('orders' as any)
+                        .update({ 
+                          status: 'completed',
+                          completed_at: new Date().toISOString()
+                        })
                         .eq('id', comanda.id);
                       
                       // Liberar mesa
                       if (comanda.table_id) {
                         await supabase
-                          .from('tables')
+                          .from('tables' as any)
                           .update({ status: 'free' })
                           .eq('id', comanda.table_id);
                       }
@@ -192,7 +246,7 @@ export default function Comandas() {
                     }
                   }}
                 >
-                  Fechar
+                  Fechar Comanda
                 </Button>
               </div>
             </Card>
@@ -224,7 +278,7 @@ export default function Comandas() {
             </p>
             <div className="space-y-2">
               <div className="flex items-center space-x-2">
-                <input type="checkbox" id="link-command" className="h-4 w-4" />
+                <input type="checkbox" id="link-command" className="h-4 w-4" checked />
                 <label htmlFor="link-command" className="text-sm">
                   Permitir vinculação de comandas a uma mesa
                 </label>
@@ -236,7 +290,7 @@ export default function Comandas() {
                 </label>
               </div>
               <div className="flex items-center space-x-2">
-                <input type="checkbox" id="open-without-order" className="h-4 w-4" />
+                <input type="checkbox" id="open-without-order" className="h-4 w-4" checked />
                 <label htmlFor="open-without-order" className="text-sm">
                   Abertura de comandas sem pedidos
                 </label>

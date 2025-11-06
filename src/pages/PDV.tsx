@@ -41,17 +41,19 @@ export default function PDV() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup" | "dine_in">("dine_in");
   const [tableNumber, setTableNumber] = useState("");
+  const [tables, setTables] = useState<any[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "credit_card" | "debit_card" | "pix">("cash");
   const { toast } = useToast();
 
   useEffect(() => {
     loadCategories();
     loadMenuItems();
+    loadTables();
   }, []);
 
   const loadCategories = async () => {
     const { data } = await supabase
-      .from('categories')
+      .from('categories' as any)
       .select('*')
       .eq('is_active', true)
       .order('sort_order');
@@ -61,12 +63,21 @@ export default function PDV() {
 
   const loadMenuItems = async () => {
     const { data } = await supabase
-      .from('menu_items')
+      .from('menu_items' as any)
       .select('*')
       .eq('is_available', true)
       .order('sort_order');
     
     if (data) setMenuItems(data);
+  };
+
+  const loadTables = async () => {
+    const { data } = await supabase
+      .from('tables' as any)
+      .select('*')
+      .order('number');
+    
+    if (data) setTables(data);
   };
 
   const filteredItems =
@@ -137,7 +148,7 @@ export default function PDV() {
       let table_id = null;
       if (deliveryType === "dine_in" && tableNumber) {
         const { data: tableData } = await supabase
-          .from('tables')
+          .from('tables' as any)
           .select('id')
           .eq('number', parseInt(tableNumber))
           .single();
@@ -146,7 +157,7 @@ export default function PDV() {
           table_id = tableData.id;
           // Atualizar status da mesa para ocupada
           await supabase
-            .from('tables')
+            .from('tables' as any)
             .update({ status: 'occupied' })
             .eq('id', table_id);
         }
@@ -155,7 +166,7 @@ export default function PDV() {
       // Criar pedido
       const orderNumber = `PDV${Date.now().toString().slice(-6)}`;
       const { data: orderData, error: orderError } = await supabase
-        .from('orders')
+        .from('orders' as any)
         .insert([{
           order_number: orderNumber,
           delivery_type: deliveryType,
@@ -181,7 +192,7 @@ export default function PDV() {
       }));
 
       const { error: itemsError } = await supabase
-        .from('order_items')
+        .from('order_items' as any)
         .insert(orderItems);
 
       if (itemsError) throw itemsError;
@@ -193,7 +204,8 @@ export default function PDV() {
 
       setCart([]);
       setTableNumber("");
-      loadMenuItems(); // Recarregar para atualizar estado
+      loadMenuItems();
+      loadTables();
     } catch (error) {
       console.error('Erro ao criar pedido:', error);
       toast({
@@ -290,13 +302,24 @@ export default function PDV() {
 
             {deliveryType === "dine_in" && (
               <div className="space-y-2 mb-4">
-                <Label>Número da Mesa</Label>
-                <Input
-                  type="text"
-                  value={tableNumber}
-                  onChange={(e) => setTableNumber(e.target.value)}
-                  placeholder="Ex: 5"
-                />
+                <Label>Selecione a Mesa</Label>
+                <Select value={tableNumber} onValueChange={setTableNumber}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione uma mesa" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tables
+                      .filter(t => t.status === 'free')
+                      .map((table) => (
+                        <SelectItem key={table.id} value={table.number.toString()}>
+                          Mesa {table.number} {table.status === 'occupied' && '(Ocupada)'}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                {tables.filter(t => t.status === 'free').length === 0 && (
+                  <p className="text-xs text-muted-foreground">Nenhuma mesa disponível</p>
+                )}
               </div>
             )}
 
