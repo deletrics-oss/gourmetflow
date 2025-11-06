@@ -3,13 +3,14 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { ShoppingCart, Plus, Minus, Trash2, DollarSign } from "lucide-react";
+import { ShoppingCart, Plus, Minus, Trash2, DollarSign, Printer } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/lib/supabase";
+import { generatePrintReceipt } from "@/components/PrintReceipt";
 
 interface CartItem {
   id: string;
@@ -39,17 +40,36 @@ export default function PDV() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup" | "dine_in">("dine_in");
-  const [tableNumber, setTableNumber] = useState("");
+  const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup" | "dine_in" | "online">("dine_in");
+  const [selectedTable, setSelectedTable] = useState<string>("");
   const [tables, setTables] = useState<any[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "credit_card" | "debit_card" | "pix">("cash");
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [restaurantName, setRestaurantName] = useState("Restaurante");
   const { toast } = useToast();
 
   useEffect(() => {
     loadCategories();
     loadMenuItems();
     loadTables();
+    loadRestaurantSettings();
   }, []);
+
+  const loadRestaurantSettings = async () => {
+    try {
+      const { data } = await supabase
+        .from('restaurant_settings' as any)
+        .select('name')
+        .maybeSingle();
+
+      if (data?.name) {
+        setRestaurantName(data.name);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar configurações:', error);
+    }
+  };
 
   const loadCategories = async () => {
     const { data } = await supabase
@@ -134,47 +154,39 @@ export default function PDV() {
       return;
     }
 
-    if (deliveryType === "dine_in" && !tableNumber) {
+    if (deliveryType === "dine_in" && !selectedTable) {
       toast({
         title: "Mesa obrigatória",
-        description: "Informe o número da mesa",
+        description: "Selecione uma mesa para pedido no local",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if ((deliveryType === "online" || deliveryType === "delivery") && !customerPhone) {
+      toast({
+        title: "Telefone obrigatório",
+        description: "Informe o telefone do cliente para pedidos online/entrega",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      // Verificar se mesa existe
-      let table_id = null;
-      if (deliveryType === "dine_in" && tableNumber) {
-        const { data: tableData } = await supabase
-          .from('tables' as any)
-          .select('id')
-          .eq('number', parseInt(tableNumber))
-          .single();
-        
-        if (tableData) {
-          table_id = tableData.id;
-          // Atualizar status da mesa para ocupada
-          await supabase
-            .from('tables' as any)
-            .update({ status: 'occupied' })
-            .eq('id', table_id);
-        }
-      }
-
       // Criar pedido
       const orderNumber = `PDV${Date.now().toString().slice(-6)}`;
       const { data: orderData, error: orderError } = await supabase
         .from('orders' as any)
         .insert([{
           order_number: orderNumber,
-          delivery_type: deliveryType,
-          table_id: table_id,
+          delivery_type: deliveryType === "online" ? "delivery" : deliveryType,
+          table_id: deliveryType === "dine_in" ? selectedTable : null,
           status: 'new',
           payment_method: paymentMethod,
           subtotal: total,
           total: total,
+          customer_name: customerName || null,
+          customer_phone: customerPhone || null,
         }])
         .select()
         .single();
@@ -197,14 +209,49 @@ export default function PDV() {
 
       if (itemsError) throw itemsError;
 
+      // Atualizar status da mesa se for pedido no local
+      if (deliveryType === "dine_in" && selectedTable) {
+        await supabase
+          .from('tables' as any)
+          .update({ status: 'occupied' })
+          .eq('id', selectedTable);
+      }
+
       toast({
-        title: "Pedido criado!",
-        description: `Pedido ${orderNumber} no valor de R$ ${total.toFixed(2)}`,
+        title: "Pedido finalizado!",
+        description: `Pedido ${orderNumber} criado com sucesso`,
       });
 
+      // Preparar dados para impressão
+      const orderForPrint = {
+        order_number: orderNumber,
+        created_at: new Date().toISOString(),
+        delivery_type: deliveryType,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        subtotal: total,
+        total: total,
+        payment_method: paymentMethod,
+        notes: null,
+        order_items: cart.map(item => ({
+          name: item.name,
+          quantity: item.quantity,
+          unit_price: item.price,
+          total_price: item.price * item.quantity
+        }))
+      };
+
+      // Imprimir recibo
+      const tableNum = deliveryType === "dine_in" && selectedTable 
+        ? tables.find(t => t.id === selectedTable)?.number 
+        : undefined;
+      generatePrintReceipt(orderForPrint, restaurantName, tableNum, 'customer');
+
+      // Limpar formulário
       setCart([]);
-      setTableNumber("");
-      loadMenuItems();
+      setSelectedTable("");
+      setCustomerName("");
+      setCustomerPhone("");
       loadTables();
     } catch (error) {
       console.error('Erro ao criar pedido:', error);
@@ -257,20 +304,23 @@ export default function PDV() {
                       </p>
                     )}
                     <div className="flex items-center justify-between">
-                      <div className="text-right">
-                        {item.promotional_price ? (
-                          <>
-                            <p className="text-sm font-bold text-status-new">
-                              R$ {item.promotional_price.toFixed(2)}
-                            </p>
-                            <p className="text-xs text-muted-foreground line-through">
-                              R$ {item.price.toFixed(2)}
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-sm font-bold">R$ {item.price.toFixed(2)}</p>
-                        )}
-                      </div>
+                      {item.promotional_price ? (
+                        <div className="flex flex-col">
+                          <span className="text-lg font-bold text-green-600">
+                            R$ {item.promotional_price.toFixed(2)}
+                          </span>
+                          <span className="text-xs text-muted-foreground line-through">
+                            R$ {item.price.toFixed(2)}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-lg font-bold">
+                          R$ {item.price.toFixed(2)}
+                        </span>
+                      )}
+                      <Button size="sm" variant="secondary">
+                        <Plus className="h-4 w-4" />
+                      </Button>
                     </div>
                   </Card>
                 ))}
@@ -287,15 +337,16 @@ export default function PDV() {
             </div>
 
             <div className="space-y-2 mb-4">
-              <Label>Tipo de Entrega</Label>
+              <Label>Tipo de Pedido</Label>
               <Select value={deliveryType} onValueChange={(v: any) => setDeliveryType(v)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="dine_in">Consumo no Local</SelectItem>
-                  <SelectItem value="pickup">Retirada</SelectItem>
+                  <SelectItem value="dine_in">Mesa (Consumo no Local)</SelectItem>
+                  <SelectItem value="online">Pedido Online (WhatsApp/Web)</SelectItem>
                   <SelectItem value="delivery">Entrega</SelectItem>
+                  <SelectItem value="pickup">Retirada</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -303,7 +354,7 @@ export default function PDV() {
             {deliveryType === "dine_in" && (
               <div className="space-y-2 mb-4">
                 <Label>Selecione a Mesa</Label>
-                <Select value={tableNumber} onValueChange={setTableNumber}>
+                <Select value={selectedTable} onValueChange={setSelectedTable}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione uma mesa" />
                   </SelectTrigger>
@@ -311,8 +362,8 @@ export default function PDV() {
                     {tables
                       .filter(t => t.status === 'free')
                       .map((table) => (
-                        <SelectItem key={table.id} value={table.number.toString()}>
-                          Mesa {table.number} {table.status === 'occupied' && '(Ocupada)'}
+                        <SelectItem key={table.id} value={table.id}>
+                          Mesa {table.number}
                         </SelectItem>
                       ))}
                   </SelectContent>
@@ -320,6 +371,27 @@ export default function PDV() {
                 {tables.filter(t => t.status === 'free').length === 0 && (
                   <p className="text-xs text-muted-foreground">Nenhuma mesa disponível</p>
                 )}
+              </div>
+            )}
+
+            {(deliveryType === "online" || deliveryType === "delivery") && (
+              <div className="space-y-4 mb-4">
+                <div className="space-y-2">
+                  <Label>Nome do Cliente</Label>
+                  <Input
+                    placeholder="Nome do cliente"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Telefone *</Label>
+                  <Input
+                    placeholder="(00) 00000-0000"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                  />
+                </div>
               </div>
             )}
 
@@ -363,18 +435,18 @@ export default function PDV() {
                       <Button
                         size="icon"
                         variant="outline"
-                        className="h-6 w-6"
+                        className="h-7 w-7"
                         onClick={() => updateQuantity(item.id, -1)}
                       >
                         <Minus className="h-3 w-3" />
                       </Button>
-                      <span className="text-sm font-medium w-8 text-center">
+                      <span className="w-8 text-center text-sm font-medium">
                         {item.quantity}
                       </span>
                       <Button
                         size="icon"
                         variant="outline"
-                        className="h-6 w-6"
+                        className="h-7 w-7"
                         onClick={() => updateQuantity(item.id, 1)}
                       >
                         <Plus className="h-3 w-3" />
@@ -382,28 +454,35 @@ export default function PDV() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-6 w-6 text-destructive"
+                        className="h-7 w-7 text-destructive"
                         onClick={() => removeFromCart(item.id)}
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     </div>
+                    <p className="text-sm font-bold w-20 text-right">
+                      R$ {(item.price * item.quantity).toFixed(2)}
+                    </p>
                   </div>
                 ))
               )}
             </div>
 
-            <div className="border-t pt-4 mb-4">
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-medium">Total:</span>
+            <div className="border-t pt-4">
+              <div className="flex justify-between items-center mb-4">
+                <span className="text-lg font-semibold">Total:</span>
                 <span className="text-2xl font-bold">R$ {total.toFixed(2)}</span>
               </div>
+              <Button
+                className="w-full gap-2"
+                size="lg"
+                onClick={handleFinishOrder}
+                disabled={cart.length === 0}
+              >
+                <DollarSign className="h-5 w-5" />
+                Finalizar Pedido
+              </Button>
             </div>
-
-            <Button className="w-full gap-2" size="lg" onClick={handleFinishOrder}>
-              <DollarSign className="h-4 w-4" />
-              Finalizar Pedido
-            </Button>
           </Card>
         </div>
       </div>
